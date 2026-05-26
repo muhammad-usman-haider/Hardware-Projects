@@ -1,0 +1,131 @@
+#include <SPI.h>
+#include <MFRC522.h>
+#include <Wire.h>
+#include <RTClib.h>
+#include <Servo.h>
+
+#define SS_PIN 10 //RX slave select
+#define RST_PIN 9
+
+MFRC522 mfrc522(SS_PIN, RST_PIN); // Create MFRC522 instance.
+RTC_DS3231 rtc;
+Servo myServo;
+
+byte card_ID[4]; //card UID size 4byte
+byte Name1[4] = {0x63, 0xF0, 0x0A, 0x0E}; //first UID card
+byte Name2[4] = {0xC3, 0x8F, 0x06, 0x10}; //second UID card
+
+int const RedLed = 6;
+int const GreenLed = 5;
+int const Buzzer = 8;
+int const ServoPin = 3;
+
+String Name; //user name
+long Number; //user number
+
+void setup() {
+  Serial.begin(9600); // Initialize serial communications with the PC
+  SPI.begin();  // Init SPI bus
+  mfrc522.PCD_Init(); // Init MFRC522 card
+  
+  if (!rtc.begin()) {
+    Serial.println("Couldn't find RTC");
+    while (1);
+  }
+  
+  if (rtc.lostPower()) {
+    Serial.println("RTC lost power, setting the time!");
+    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+  }
+
+  myServo.attach(ServoPin);
+  myServo.write(0); // Initial position (locked)
+
+  Serial.println("CLEARSHEET");                 // clears starting at row 1
+  Serial.println("LABEL,Date,Time,UID,Name,Number");// make five columns (Date,Time,UID,[Name:"user name"],[Number:"user number"])
+
+  pinMode(RedLed, OUTPUT);
+  pinMode(GreenLed, OUTPUT);
+  pinMode(Buzzer, OUTPUT);
+}
+
+void loop() {
+  //look for new card
+  if (!mfrc522.PICC_IsNewCardPresent()) {
+    return; //go to start of loop if there is no card present
+  }
+  // Select one of the cards
+  if (!mfrc522.PICC_ReadCardSerial()) {
+    return; //if read card serial(0) returns 1, the uid struct contains the ID of the read card.
+  }
+
+  printUID(); // Print the UID of the card
+
+  for (byte i = 0; i < mfrc522.uid.size; i++) {
+    card_ID[i] = mfrc522.uid.uidByte[i];
+
+    if (card_ID[i] == Name1[i]) {
+      Name = "First Employee"; //user name
+      Number = 123456; //user number
+    } else if (card_ID[i] == Name2[i]) {
+      Name = "Second Employee"; //user name
+      Number = 789101; //user number
+    } else {
+      digitalWrite(GreenLed, LOW);
+      digitalWrite(RedLed, HIGH);
+      beepBuzzer(); // Call the function to beep the buzzer
+      goto cont; //go directly to the labeled section
+    }
+  }
+
+  DateTime now = rtc.now();
+  Serial.print("DATA,");
+  Serial.print(now.year(), DEC); Serial.print('/');
+  Serial.print(now.month(), DEC); Serial.print('/');
+  Serial.print(now.day(), DEC); Serial.print(",");
+  Serial.print(now.hour(), DEC); Serial.print(':');
+  Serial.print(now.minute(), DEC); Serial.print(':');
+  Serial.print(now.second(), DEC); Serial.print(",");
+  Serial.print(" ");
+  for (byte i = 0; i < 4; i++) {
+    Serial.print(card_ID[i], HEX);
+    if (i < 3) Serial.print(":");
+  }
+  Serial.print(",");
+  Serial.print(Name); //send the Name to excel
+  Serial.print(",");
+  Serial.println(Number); //send the Number to excel
+  digitalWrite(GreenLed, HIGH);
+  digitalWrite(RedLed, LOW);
+  digitalWrite(Buzzer, HIGH);
+  delay(30);
+  digitalWrite(Buzzer, LOW);
+  myServo.write(90); // Unlock position
+  delay(5000); // Keep the door unlocked for 5 seconds
+  myServo.write(0); // Lock position
+  Serial.println("SAVEWORKBOOKAS,Names/WorkNames");
+
+  delay(1000);
+  cont:
+  delay(2000);
+  digitalWrite(GreenLed, LOW);
+  digitalWrite(RedLed, LOW);
+}
+
+void beepBuzzer() {
+  for (int i = 0; i < 3; i++) {
+    digitalWrite(Buzzer, HIGH);
+    delay(100);
+    digitalWrite(Buzzer, LOW);
+    delay(100);
+  }
+}
+
+void printUID() {
+  Serial.print("UID:");
+  for (byte i = 0; i < mfrc522.uid.size; i++) {
+    Serial.print(mfrc522.uid.uidByte[i] < 0x10 ? " 0" : " ");
+    Serial.print(mfrc522.uid.uidByte[i], HEX);
+  }
+  Serial.println();
+}
