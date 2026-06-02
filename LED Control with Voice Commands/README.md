@@ -187,4 +187,3 @@ For questions or technical support, please open an issue in the repository or co
 ---
 
 **Last Updated**: June 2026
-**Project Status**: Active Development
